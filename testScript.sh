@@ -13,15 +13,23 @@ fi
 echo -e "${RED} Do you want to recompile this pass?[y/n]${NC}"
 read answer
 if [ "$answer" = "y" ]; then
-    cd ../../../../build/lib
+    cd ../../../../build
     make
-fi 
+    cd ./../llvm/lib/Transforms/llvm-dead-virtual-pass/
+fi
 
-if [[ $1 == *".cpp"* ]]; then
+fName=$1
+if [[ $fName == *".cpp"* ]]; then
     cd TestFiles 
     clang -S -O0 -emit-llvm $1 
+    fName="${fName//.cpp/.ll}"
+    cd ./../
+else 
+    cd TestFiles
+    rm *.s
+    cd ./../
 fi 
 
-cd ../../../../build/lib
+cd ./../../../../build/lib/
 echo -e "${RED} Loading our pass...${NC}"
-./../bin/opt -load LLVMDeadVirtual.so -enable-new-pm=0 -DVFE ./../../llvm/lib/Transforms/llvm-dead-virtual-pass/TestFiles/$1 -S > ../../llvm/lib/Transforms/llvm-dead-virtual-pass/TestFiles/PassIrOutput.s
+./../bin/opt -load LLVMDeadVirtual.so -enable-new-pm=0 -DVFE ./../../llvm/lib/Transforms/llvm-dead-virtual-pass/TestFiles/$fName -S > ../../llvm/lib/Transforms/llvm-dead-virtual-pass/TestFiles/PassIrOutput.s
