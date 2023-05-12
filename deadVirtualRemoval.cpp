@@ -66,11 +66,6 @@ public:
     return Changed;
   }
 
-
-
-
-
-
   void getAnalysisUsage(AnalysisUsage &AU) const {
     // Oznacavamo da se analiza CallGraphWrapperPass izvrsi pre pass-a
     AU.addRequired<CallGraphWrapperPass>();

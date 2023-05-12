@@ -13,6 +13,7 @@ fi
 echo -e "${RED} Do you want to recompile this pass?[y/n]${NC}"
 read answer
 if [ "$answer" = "y" ]; then
+    cd ../../../../build/lib
     make
 fi 
 
@@ -23,4 +24,4 @@ fi
 
 cd ../../../../build/lib
 echo -e "${RED} Loading our pass...${NC}"
-./../bin/opt -load LLVMDeadVirtual.so -enable-new-pm=0 -DVFE ./../../llvm/lib/Transforms/llvm-dead-virtual-pass/TestFiles/$1
+./../bin/opt -load LLVMDeadVirtual.so -enable-new-pm=0 -DVFE ./../../llvm/lib/Transforms/llvm-dead-virtual-pass/TestFiles/$1 -S > ../../llvm/lib/Transforms/llvm-dead-virtual-pass/TestFiles/PassIrOutput.s
