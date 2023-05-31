@@ -1,16 +1,18 @@
 class Base {
 public:
-    virtual void foo() {}
-    virtual void bar() {}
+    virtual void virtual_foo() {}
+    virtual void virtual_bar() {}
+    void testFunction() {}
 };
 
-class Derived : public Base {
+class testClass : public Base {
 public:
-    virtual void foo() override {}
+
 };
 
 int main() {
-    Base* ptr = new Derived;
-    ptr->bar(); // This will call Base::bar()
+    Base* ptr = new testClass();
+    ptr->virtual_bar();
+    ptr->testFunction();
     return 0;
 }
