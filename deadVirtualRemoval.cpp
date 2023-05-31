@@ -106,6 +106,8 @@ private:
   }
 
   // 1. Nedostizne virtuelne funkcije
+  // Trazimo pozvane funkcije u nasoj funkciji i pokusavamo da vidim
+  // da li postoji grana poziva iz nje ka njima
   //=======================================================
   bool isUnreachableVirtualFunction(const Function &F) {
     CallGraphNode *CGNode = (*CG)[&F];
@@ -136,6 +138,7 @@ private:
 
     // Iteriramo po globalnim funkcijama modula
     for (auto &F : ParentModule->functions()) {
+      // Trazimo f-ju sa istim imenom kao ulazna f-ja
       if (F.getName() == FuncName) {
         FunctionType *FTy = F.getFunctionType();
         if (FTy->isPointerTy()) {
@@ -156,6 +159,7 @@ private:
   }
 
   // Pomocna f-ja
+  // Trazi Klasu u Modulu
   StructType *findStructTypeInModule(Module &M) {
     for (auto &Global : M.globals()) {
       if (StructType *STy = dyn_cast<StructType>(Global.getValueType())) {
@@ -207,9 +211,8 @@ private:
     if (F.empty())
       return false;
 
-    // Provera da li f-ja ima samo jedan basic block
-    // TOFIX
-    if (F.size() != 1)
+    // Provera da li f-ja ima jedan ili vise basic blokova
+    if (F.size() >= 1)
       return false;
 
     // Proveramo da li je ulazni blok funkcije prazan
@@ -221,8 +224,7 @@ private:
     return true;
   }
 
-  // Pomocna f-ja
-  // TOFIX - unused
+  // Pomocna f-ja (Unused)
   bool isAllConstant(const ConstantDataSequential *CDS) {
     for (unsigned i = 0; i < CDS->getNumElements(); ++i) {
       Constant *Element = CDS->getElementAsConstant(i);
@@ -348,6 +350,8 @@ private:
   }
 
   // Pomocna f-ja (Provera da li je f-ja cista)
+  // Ako je f-ja cista njena povratna vrednost nigde nije koriscena to znaci da se 
+  // ta f-ja moze slobodno ukloniti jer u njoj nema propratnih efekata!
   bool isPure(Function &F) {
     // Cista virtuelna funkcija: u LLVM-u je to funkcija cija povratna vrednost
     // iskljucivo zavisi od ulaza ili globalnih promenljivih Ako fj-a nije
@@ -356,6 +360,7 @@ private:
 
     // Iteriramo po basic blokovima
     for (BasicBlock &bb : F) {
+      // Iteriramo po instrukcijama i pitamo da li neka instrukcija ima propratni efekat
       for (Instruction &i : bb) {
         if (i.mayHaveSideEffects()) {
           return false;
@@ -395,9 +400,7 @@ private:
       return false;
     }
 
-    // Ako uslovi iznad nisu ispunjeni, racunamo da je nekoriscena(verovatno ima
-    // jos nekih uslova, ali ne mogu da se setim, ni da pronadjem na netu
-    // uslove)
+    // Ako uslovi iznad nisu ispunjeni, racunamo da je nekoriscena)
     return true;
   }
 
