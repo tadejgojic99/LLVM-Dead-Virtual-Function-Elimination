@@ -36,11 +36,27 @@ public:
         // Za svaku funkciju iz modula proveravamo da li zadovoljava uslov neke
         // od ovih funkcija. Ako da, brisemo je, jer ukoliko zadovoljava bilo
         // koju od ovih funkcija, eliminacija ne remeti rad modula
-        if (isAdequateFunction(F) || isUnusedVirtualFunction(F) ||
+        /*bool isAdequate = isAdequateFunction(F);
+        bool isUnused = isUnusedVirtualFunction(F);
+        bool isUnreachable = isUnreachableVirtualFunction(F);
+        bool hasNoImplemented = hasNoImplementedVirtualFunction(F);
+        bool hasConstant = hasConstantReturnVirtualFunction(F);*/
+        
+        if(isVirtual(F) && countInstructionsInFunction(F) <= 4) {
+          //F.deleteBody();
+          removeCallInstruction(F);
+          //F.removeFromParent();
+          Changed = true;
+        }
+        //dbgs() << "CUPAPI | " << F.getName() << " " << isFunctionBodyEmpty(F) << " | CUPAPI\n";
+        //countInstructionsInFunction(F);
+        
+        //dbgs() << "Function name: " << F.getName() << "  |   " << isAdequate << " " << isUnused << " " << isUnreachable << " " << hasNoImplemented << " " << hasConstant << " "  << "\n";
+        if (isUnusedVirtualFunction(F) ||
             isUnreachableVirtualFunction(F) ||
             hasNoImplementedVirtualFunction(F) ||
             hasConstantReturnVirtualFunction(F)) {
-
+          dbgs() << "MUNJANJO" << "\n";
           F.deleteBody();
           Changed = true;
         }
@@ -61,10 +77,60 @@ private:
   // nazivu mora imati virtual_ Primer virtual_<ime_fje> ili <ime_fje>_virtual
   bool isVirtual(Function &F) {
     return std::regex_match(F.getName().str(),
-                            std::regex("(.*)_+virtual_+(.+)"))
+                            std::regex("(.*)virtual_(.+)"))
                ? true
                : false;
   }
+
+  void removeCallInstruction(Function& F) {
+    std::vector<Instruction*> toRemove;
+
+    for (auto& BB : F) {
+        for (auto& I : BB) {
+          toRemove.push_back(&I);
+
+          //dbgs() << I << "\n";
+            /*if (CallBase* CB = dyn_cast<CallBase>(&I)) {
+                Value* calledValue = CB->getCalledOperand();
+                dbgs() << calledValue << "\n";
+                if (Function* calledFunction = dyn_cast<Function>(calledValue)) {
+                    auto s = calledFunction->getName();
+                    dbgs() << s.str() << "\n";
+                    if (std::regex_match(s.str(),
+                            std::regex("(.*)virtual_(.+)"))) {
+                        toRemove.push_back(CB);
+                    }
+                }
+            }*/
+        }
+    }
+
+    for (auto& I : toRemove) {
+      /*if(std::regex_match(I->getOpcodeName(),
+                            std::regex("(.*)ret(.*)"))) {*/
+        if (!I->isTerminator()) {
+            dbgs() << I->getOpcodeName() << "\n";
+            I->eraseFromParent();              
+        }      
+        //dbgs() << I->getOpcodeName() << "\n";
+        //I->removeFromParent();
+      //}
+    }
+
+  }
+
+  int countInstructionsInFunction(Function &F) {
+    unsigned instructionCount = 0;
+    for (const BasicBlock &BB : F) {
+      for (const Instruction &I : BB) {
+        instructionCount++;
+      }
+    }
+
+    return instructionCount;
+    //dbgs() << "Function name: " << F.getName() << ", Instruction Count: " << instructionCount << "\n";
+  }
+
 
   // Ovde definisemo te funkcije koje su nam kriterijumi za identifikaciju
   // mrtvih virtuelnih funkcija
@@ -212,7 +278,7 @@ private:
       return false;
 
     // Provera da li f-ja ima jedan ili vise basic blokova
-    if (F.size() >= 1)
+    if (F.size() <= 1)
       return false;
 
     // Proveramo da li je ulazni blok funkcije prazan
@@ -224,7 +290,7 @@ private:
     return true;
   }
 
-  // Pomocna f-ja (Unused)
+  // Pomocna f-ja koja za proverava da li su svi elementi konstantne
   bool isAllConstant(const ConstantDataSequential *CDS) {
     for (unsigned i = 0; i < CDS->getNumElements(); ++i) {
       Constant *Element = CDS->getElementAsConstant(i);
@@ -250,104 +316,85 @@ private:
   // 3. Provera da li je povratna vrednost f-je konstantna
   //=======================================================
   bool hasConstantReturnVirtualFunction(Function &F) {
-    if (F.getReturnType()->isIntegerTy() ||
-        F.getReturnType()->isFloatingPointTy()) {
-      if (ReturnInst *RetInst =
-              dyn_cast<ReturnInst>(F.getEntryBlock().getTerminator())) {
-        Value *RetVal = RetInst->getOperand(0);
-        if (Constant *ConstRet = dyn_cast<Constant>(RetVal)) {
-          if (!ConstRet->isNullValue()) {
-            return true;
-          }
-        }
-      }
-    } else if (F.getReturnType()->isPointerTy()) {
-      if (ReturnInst *RetInst =
-              dyn_cast<ReturnInst>(F.getEntryBlock().getTerminator())) {
-        Value *RetVal = RetInst->getOperand(0);
-        if (ConstantExpr *CE = dyn_cast<ConstantExpr>(RetVal)) {
-          if (CE->getNumOperands() > 0 &&
-              CE->getOperand(0)->getType()->isAggregateType()) {
-            return true;
-          }
-        }
-      }
-    } else if (F.getReturnType()->isArrayTy()) {
-      if (ReturnInst *RetInst =
-              dyn_cast<ReturnInst>(F.getEntryBlock().getTerminator())) {
-        Value *RetVal = RetInst->getOperand(0);
-        if (ConstantArray *ArrayRet = dyn_cast<ConstantArray>(RetVal)) {
-          if (ArrayRet->getType() && ArrayRet->getType()->isArrayTy()) {
-            // Null check for ArrayRet->getType()->getArrayNumElements()
-            if (ArrayRet->getType()->getArrayNumElements()) {
-              Constant *Element = ArrayRet->getOperand(0);
-              for (unsigned i = 1; i < ArrayRet->getNumOperands(); ++i) {
-                if (ArrayRet->getOperand(i)) {
-                  if (ArrayRet->getOperand(i) != Element) {
-                    return false;
+    if(isVirtual(F)) {
+      //dbgs() << F.getName() << "\n";
+      // Prolazimo kroz sve Basic Block-ove i njihove instrukcije, kako bi nasli return
+      for (BasicBlock &BB : F) {
+        for (Instruction &I : BB) {
+          if (ReturnInst *RetInst = dyn_cast<ReturnInst>(&I)) {
+            Value *RetVal = RetInst->getOperand(0);
+            if (Constant *ConstRet = dyn_cast<Constant>(RetVal)) {
+              // Provera za konstantne povratne vrednosti
+              // Zavisno od tipa povratne vrednosti funkcije
+
+              // Integer ili floating-point tipovi
+              if (F.getReturnType()->isIntegerTy() ||
+                  F.getReturnType()->isFloatingPointTy()) {
+                if (!ConstRet->isNullValue()) {
+                  return true;
+                }
+              }
+              // Pointer tipovi
+              else if (F.getReturnType()->isPointerTy()) {
+                if (ConstantExpr *CE = dyn_cast<ConstantExpr>(RetVal)) {
+                  if (CE->getNumOperands() > 0 &&
+                      CE->getOperand(0)->getType()->isAggregateType()) {
+                    return true;
                   }
                 }
               }
-              /*ConstantInt *ArraySize =
-              ConstantInt::get(Type::getInt64Ty(F.getContext()),
-              ArrayRet->getType()->getArrayNumElements()); if (!ArraySize) {
-                  return false;
-              }*/
-
-              return true;
-              /*Constant *Element = ArrayRet->getOperand(0);
-              for (unsigned i = 1; i < ArrayRet->getNumOperands(); ++i) {
-                  if (ArrayRet->getOperand(i) != Element) {
-                      return false;
-                  }
-              }
-
-              uint64_t NumElements = ArrayRet->getType()->getArrayNumElements();
-              Type *Int64Ty = Type::getInt64Ty(F.getContext());
-              Constant *ArraySize = ConstantInt::get(Int64Ty, NumElements); */
-            }
-          }
-        }
-      }
-    } else if (isEnumType(F.getReturnType())) {
-      if (ReturnInst *RetInst =
-              dyn_cast<ReturnInst>(F.getEntryBlock().getTerminator())) {
-        Value *RetVal = RetInst->getOperand(0);
-        if (ConstantInt *EnumRet = dyn_cast<ConstantInt>(RetVal)) {
-          for (User *U : F.users()) {
-            if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(U)) {
-              if (EV->getNumIndices() == 1 && EV->getIndices()[0] == 0) {
-                const ConstantInt *Index =
-                    dyn_cast<ConstantInt>(EV->getOperand(1));
-                if (Index && Index->getZExtValue() == 0) {
-                  if (const ConstantInt *Val =
-                          dyn_cast<ConstantInt>(EV->getOperand(0))) {
-                    if (Val != EnumRet) {
-                      return false;
+              // Array tipovi
+              else if (F.getReturnType()->isArrayTy()) {
+                if (ConstantArray *ArrayRet = dyn_cast<ConstantArray>(RetVal)) {
+                  if (ArrayRet->getType() && ArrayRet->getType()->isArrayTy()) {
+                    if (ArrayRet->getType()->getArrayNumElements()) {
+                      Constant *Element = ArrayRet->getOperand(0);
+                      for (unsigned i = 1; i < ArrayRet->getNumOperands(); ++i) {
+                        if (ArrayRet->getOperand(i)) {
+                          if (ArrayRet->getOperand(i) != Element) {
+                            return false;
+                          }
+                        }
+                      }
+                      return true;
                     }
                   }
                 }
               }
+              // Enum tipovi
+              else if (isEnumType(F.getReturnType())) {
+                // kastujemo u ConstantInt
+                if (ConstantInt *EnumRet = dyn_cast<ConstantInt>(RetVal)) {
+                  for (User *U : F.users()) {
+                    // Uzimamo instrukciju
+                    if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(U)) {
+                      if (EV->getNumIndices() == 1 && EV->getIndices()[0] == 0) {
+                        const ConstantInt *Index =
+                            dyn_cast<ConstantInt>(EV->getOperand(1));
+                        if (Index && Index->getZExtValue() == 0) {
+                          // Proveravamo da li se poklapa ta vrednost
+                          if (const ConstantInt *Val =
+                                  dyn_cast<ConstantInt>(EV->getOperand(0))) {
+                            if (Val != EnumRet) {
+                              return false;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  return true;
+                }
+              }
             }
           }
-          return true;
         }
       }
-    } else if (ReturnInst *RetInst =
-                   dyn_cast<ReturnInst>(F.getEntryBlock().getTerminator())) {
-      Value *RetVal = RetInst->getOperand(0);
-      if (Constant *ConstRetVal = dyn_cast<Constant>(RetVal)) {
-        for (User *U : RetVal->users()) {
-          if (U != RetInst) {
-            return false;
-          }
-        }
-        return true;
-      }
-    } else {
-      return false;
     }
+
+    return false; // Nije nadjena ReturnInst u funkciji
   }
+
 
   // Pomocna f-ja (Provera da li je f-ja cista)
   // Ako je f-ja cista njena povratna vrednost nigde nije koriscena to znaci da se 
