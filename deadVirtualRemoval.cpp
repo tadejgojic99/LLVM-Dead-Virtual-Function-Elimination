@@ -30,39 +30,35 @@ public:
         false; // Provera: ukoliko se bude transformisao kod, tj. ukoliko se
                // eliminise mrtva virtuelna funkcija, postace true
 
+    std::vector<Function *> markedForDelete;
     for (Function &F : M) {
 
-      if (!F.isDeclaration() && !F.isIntrinsic()) {
+      if (!F.isDeclaration() && !F.isIntrinsic() && isVirtual(F)) {
         // Za svaku funkciju iz modula proveravamo da li zadovoljava uslov neke
         // od ovih funkcija. Ako da, brisemo je, jer ukoliko zadovoljava bilo
         // koju od ovih funkcija, eliminacija ne remeti rad modula
-        /*bool isAdequate = isAdequateFunction(F);
+        /*
+        bool isAdequate = isAdequateFunction(F);
         bool isUnused = isUnusedVirtualFunction(F);
         bool isUnreachable = isUnreachableVirtualFunction(F);
         bool hasNoImplemented = hasNoImplementedVirtualFunction(F);
-        bool hasConstant = hasConstantReturnVirtualFunction(F);*/
-        
-        if(isVirtual(F) && countInstructionsInFunction(F) <= 4) {
-          //F.deleteBody();
-          removeCallInstruction(F);
-          //F.removeFromParent();
-          Changed = true;
-        }
-        //dbgs() << "CUPAPI | " << F.getName() << " " << isFunctionBodyEmpty(F) << " | CUPAPI\n";
-        //countInstructionsInFunction(F);
-        
-        //dbgs() << "Function name: " << F.getName() << "  |   " << isAdequate << " " << isUnused << " " << isUnreachable << " " << hasNoImplemented << " " << hasConstant << " "  << "\n";
+        bool hasConstant = hasConstantReturnVirtualFunction(F);
+        */
+
         if (isUnusedVirtualFunction(F) ||
-            isUnreachableVirtualFunction(F) ||
-            hasNoImplementedVirtualFunction(F) ||
+            // isUnreachableVirtualFunction(F) ||
+            // hasNoImplementedVirtualFunction(F) ||
             hasConstantReturnVirtualFunction(F)) {
-          //bool hasConstant = hasConstantReturnVirtualFunction(F);
-          //dbgs() << "hasConstant: " << hasConstant << "\n";
-          //F.deleteBody();
+          dbgs() << F.getName() << "Should be deleted"
+                 << "\n";
+          deleteDeadCallsitesInMain(F, M);
+          markedForDelete.push_back(&F);
+
           Changed = true;
         }
       }
     }
+    deleteMarkedFunctions(markedForDelete);
 
     return Changed;
   }
@@ -73,46 +69,37 @@ public:
   }
 
 private:
+  // Ova funkcija brise instrukcije koje pozivaju mrtve f-je u funkciji main
+  void deleteDeadCallsitesInMain(Function &F, Module &M) {
+    BasicBlock &BB = *M.getFunction("main")->begin();
+    for (BasicBlock::iterator itINST = BB.begin(); itINST != BB.end();
+         itINST++) {
+      Instruction &INST = *itINST;
+      if (const CallInst *CInst = dyn_cast<CallInst>(&INST)) {
+        if (CInst->getCalledOperand()->getName() == F.getName()) {
+          INST.replaceAllUsesWith(UndefValue::get(INST.getType()));
+          INST.eraseFromParent();
+          break;
+        }
+      }
+    }
+  }
+
+  // Brise funkcije koje su oznacene kao mrtve
+  void deleteMarkedFunctions(std::vector<Function *> &markedFunctions) {
+    for (auto func : markedFunctions) {
+      func->replaceAllUsesWith(UndefValue::get(func->getType()));
+      func->eraseFromParent();
+    }
+  }
+
   // Pomocna f-ja
   // Proveramo da li je f-ja virtuelna na osnovu (virtual_) tj svaka f-ja u svom
   // nazivu mora imati virtual_ Primer virtual_<ime_fje> ili <ime_fje>_virtual
   bool isVirtual(Function &F) {
-    return std::regex_match(F.getName().str(),
-                            std::regex("(.*)virtual_(.+)"))
+    return std::regex_match(F.getName().str(), std::regex("(.*)virtual_(.+)"))
                ? true
                : false;
-  }
-
-  void removeCallInstruction(Function& F) {
-    std::vector<Instruction*> toRemove;
-
-    for (auto& BB : F) {
-        for (auto& I : BB) {
-          toRemove.push_back(&I);
-
-          //dbgs() << I << "\n";
-            /*if (CallBase* CB = dyn_cast<CallBase>(&I)) {
-                Value* calledValue = CB->getCalledOperand();
-                dbgs() << calledValue << "\n";
-                if (Function* calledFunction = dyn_cast<Function>(calledValue)) {
-                    auto s = calledFunction->getName();
-                    dbgs() << s.str() << "\n";
-                    if (std::regex_match(s.str(),
-                            std::regex("(.*)virtual_(.+)"))) {
-                        toRemove.push_back(CB);
-                    }
-                }
-            }*/
-        }
-    }
-
-    for (auto& I : toRemove) {
-        if (!I->isTerminator()) {
-            //dbgs() << I->getOpcodeName() << "\n";
-            I->eraseFromParent();              
-        }      
-    }
-
   }
 
   int countInstructionsInFunction(Function &F) {
@@ -124,9 +111,9 @@ private:
     }
 
     return instructionCount;
-    //dbgs() << "Function name: " << F.getName() << ", Instruction Count: " << instructionCount << "\n";
+    // dbgs() << "Function name: " << F.getName() << ", Instruction Count: " <<
+    // instructionCount << "\n";
   }
-
 
   // Ovde definisemo te funkcije koje su nam kriterijumi za identifikaciju
   // mrtvih virtuelnih funkcija
@@ -313,61 +300,65 @@ private:
   // 3. Provera da li je povratna vrednost f-je konstantna
   //=======================================================
   bool hasConstantReturnVirtualFunction(Function &F) {
-    if(isVirtual(F)) {
-      //dbgs() << F.getName() << "\n";
-      // Prolazimo kroz sve Basic Block-ove i njihove instrukcije, kako bi nasli return
+    if (isVirtual(F)) {
+      // dbgs() << F.getName() << "\n";
+      //  Prolazimo kroz sve Basic Block-ove i njihove instrukcije, kako bi
+      //  nasli return
       for (BasicBlock &BB : F) {
         for (Instruction &I : BB) {
           if (ReturnInst *RetInst = dyn_cast<ReturnInst>(&I)) {
             Value *RetVal = RetInst->getOperand(0);
             if (Constant *ConstRet = dyn_cast<Constant>(RetVal)) {
-              //Da li je konstanta tipa niza
-                if (ArrayType *ArrTy = dyn_cast<ArrayType>(ConstRet->getType())) {
-                  if(ArrTy->isSized()) {
-                    return true;
-                  }
+              // Da li je konstanta tipa niza
+              if (ArrayType *ArrTy = dyn_cast<ArrayType>(ConstRet->getType())) {
+                if (ArrTy->isSized()) {
+                  return true;
                 }
-                // Pronasao da u LLVM-u konvertuje enum u int, nema zasebnu podrsku za enum
-                // if (isEnumType(F.getReturnType())) {
-                //   // kastujemo u ConstantInt
-                //   if (ConstantInt *EnumRet = dyn_cast<ConstantInt>(RetVal)) {
-                //     for (User *U : F.users()) {
-                //       // Uzimamo instrukciju i proveravamo da li je svaki put ista vrednost enum-a, u suprotnom bi samo proveravalo tip
-                //       if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(U)) {
-                //         if (EV->getNumIndices() == 1 && EV->getIndices()[0] == 0) {
-                //           const ConstantInt *Index =
-                //               dyn_cast<ConstantInt>(EV->getOperand(1));
-                //           if (Index && Index->getZExtValue() == 0) {
-                //             // Proveravamo da li se poklapa ta vrednost
-                //             if (const ConstantInt *Val =
-                //                     dyn_cast<ConstantInt>(EV->getOperand(0))) {
-                //               if (Val != EnumRet) {
-                //                 return false;
-                //               }
-                //             }
-                //           }
-                //         }
-                //       }
-                //     }
-                //   }
-                //   return true;
-                // }
-              
+              }
+              // Pronasao da u LLVM-u konvertuje enum u int, nema zasebnu
+              // podrsku za enum if (isEnumType(F.getReturnType())) {
+              //   // kastujemo u ConstantInt
+              //   if (ConstantInt *EnumRet = dyn_cast<ConstantInt>(RetVal)) {
+              //     for (User *U : F.users()) {
+              //       // Uzimamo instrukciju i proveravamo da li je svaki put
+              //       ista vrednost enum-a, u suprotnom bi samo proveravalo tip
+              //       if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(U))
+              //       {
+              //         if (EV->getNumIndices() == 1 && EV->getIndices()[0] ==
+              //         0) {
+              //           const ConstantInt *Index =
+              //               dyn_cast<ConstantInt>(EV->getOperand(1));
+              //           if (Index && Index->getZExtValue() == 0) {
+              //             // Proveravamo da li se poklapa ta vrednost
+              //             if (const ConstantInt *Val =
+              //                     dyn_cast<ConstantInt>(EV->getOperand(0))) {
+              //               if (Val != EnumRet) {
+              //                 return false;
+              //               }
+              //             }
+              //           }
+              //         }
+              //       }
+              //     }
+              //   }
+              //   return true;
+              // }
+
               // Pointer tipovi
               else if (F.getReturnType()->isPointerTy()) {
                 return true;
-                
+
               }
               // Tip strukture
               else if (F.getReturnType()->isAggregateType()) {
-                      return true;
+                return true;
               }
               // Enum tip, char, integer i float
-               // Provera za konstantne povratne vrednosti
+              // Provera za konstantne povratne vrednosti
               // Zavisno od tipa povratne vrednosti funkcije
               // Integer ili floating-point tipovi
               else if (F.getReturnType()->isIntegerTy() ||
-                  F.getReturnType()->isFloatingPointTy()) {
+                       F.getReturnType()->isFloatingPointTy()) {
                 if (!ConstRet->isNullValue()) {
                   return true;
                 }
@@ -381,10 +372,9 @@ private:
     return false; // Nije nadjena ReturnInst u funkciji
   }
 
-
   // Pomocna f-ja (Provera da li je f-ja cista)
-  // Ako je f-ja cista njena povratna vrednost nigde nije koriscena to znaci da se 
-  // ta f-ja moze slobodno ukloniti jer u njoj nema propratnih efekata!
+  // Ako je f-ja cista njena povratna vrednost nigde nije koriscena to znaci da
+  // se ta f-ja moze slobodno ukloniti jer u njoj nema propratnih efekata!
   bool isPure(Function &F) {
     // Cista virtuelna funkcija: u LLVM-u je to funkcija cija povratna vrednost
     // iskljucivo zavisi od ulaza ili globalnih promenljivih Ako fj-a nije
@@ -393,7 +383,8 @@ private:
 
     // Iteriramo po basic blokovima
     for (BasicBlock &bb : F) {
-      // Iteriramo po instrukcijama i pitamo da li neka instrukcija ima propratni efekat
+      // Iteriramo po instrukcijama i pitamo da li neka instrukcija ima
+      // propratni efekat
       for (Instruction &i : bb) {
         if (i.mayHaveSideEffects()) {
           return false;
@@ -407,34 +398,24 @@ private:
   //=======================================================
   bool isUnusedVirtualFunction(Function &F) {
 
-    // Provera da li je F virtuelna
-    if (!isVirtual(F)) {
-      return false;
-    }
-
     // Ovo znaci da li je funkciji moguce pristupiti iz drugih jedinica
     // prevodjenja(drugi modul npr). Mislim da moze biti korisno
-    if (F.hasExternalLinkage()) {
-      return false;
-    }
+    // if (F.hasExternalLinkage()) {
+    // return false;
+    //}
 
     // Da li je funkcija overriden-ovana od strane bilo koje druge funkcije
     if (F.isOneValue()) {
-      return false;
+      return true;
     }
 
     // Da li se funkcija poziva iz bilo koje druge funkcije
     if (F.getNumUses() > 0) {
-      return false;
+      return true;
     }
 
-    // Da li je i definisana u modulu, ne samo deklarisana
-    if (!F.isDeclaration()) {
-      return false;
-    }
-
-    // Ako uslovi iznad nisu ispunjeni, racunamo da je nekoriscena)
-    return true;
+    // Ako uslovi iznad nisu ispunjeni, racunamo da je koriscena)
+    return false;
   }
 
 }; // kraj namespace-a

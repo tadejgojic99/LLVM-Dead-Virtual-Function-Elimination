@@ -1,7 +1,7 @@
 class Base {
 public:
     virtual void virtual_foo() {}
-    virtual void virtual_bar() {}
+    virtual int virtual_bar() {return 5;}
     void testFunction() {}
 };
 
@@ -11,8 +11,9 @@ public:
 };
 
 int main() {
-    Base* ptr = new testClass();
-    ptr->virtual_bar();
-    ptr->testFunction();
+    Base ptr;
+    ptr.virtual_bar();
+    ptr.testFunction();
+    ptr.virtual_foo();
     return 0;
 }
