@@ -56,8 +56,9 @@ public:
             isUnreachableVirtualFunction(F) ||
             hasNoImplementedVirtualFunction(F) ||
             hasConstantReturnVirtualFunction(F)) {
-          dbgs() << "MUNJANJO" << "\n";
-          F.deleteBody();
+          //bool hasConstant = hasConstantReturnVirtualFunction(F);
+          //dbgs() << "hasConstant: " << hasConstant << "\n";
+          //F.deleteBody();
           Changed = true;
         }
       }
@@ -106,15 +107,10 @@ private:
     }
 
     for (auto& I : toRemove) {
-      /*if(std::regex_match(I->getOpcodeName(),
-                            std::regex("(.*)ret(.*)"))) {*/
         if (!I->isTerminator()) {
-            dbgs() << I->getOpcodeName() << "\n";
+            //dbgs() << I->getOpcodeName() << "\n";
             I->eraseFromParent();              
         }      
-        //dbgs() << I->getOpcodeName() << "\n";
-        //I->removeFromParent();
-      //}
     }
 
   }
@@ -301,17 +297,18 @@ private:
   }
 
   // Pomocna f-ja
-  bool isEnumType(Type *Ty) {
-    if (StructType *StructTy = dyn_cast<StructType>(Ty)) {
-      if (StructTy->getNumElements() == 1) {
-        Type *MemberTy = StructTy->getElementType(0);
+  // bool isEnumType(Type *Ty) {
+  //   dbgs() << "Tip: " << Ty << "\n";
+  //   if (StructType *StructTy = dyn_cast<StructType>(Ty)) {
+  //     if (StructTy->getNumElements() >= 1) {
+  //       Type *MemberTy = StructTy->getElementType(0);
 
-        if (MemberTy && MemberTy->isIntegerTy())
-          return true;
-      }
-    }
-    return false;
-  }
+  //       if (MemberTy && MemberTy->isIntegerTy())
+  //         return true;
+  //     }
+  //   }
+  //   return false;
+  // }
 
   // 3. Provera da li je povratna vrednost f-je konstantna
   //=======================================================
@@ -324,65 +321,54 @@ private:
           if (ReturnInst *RetInst = dyn_cast<ReturnInst>(&I)) {
             Value *RetVal = RetInst->getOperand(0);
             if (Constant *ConstRet = dyn_cast<Constant>(RetVal)) {
-              // Provera za konstantne povratne vrednosti
-              // Zavisno od tipa povratne vrednosti funkcije
-
-              // Integer ili floating-point tipovi
-              if (F.getReturnType()->isIntegerTy() ||
-                  F.getReturnType()->isFloatingPointTy()) {
-                if (!ConstRet->isNullValue()) {
-                  return true;
-                }
-              }
-              // Pointer tipovi
-              else if (F.getReturnType()->isPointerTy()) {
-                if (ConstantExpr *CE = dyn_cast<ConstantExpr>(RetVal)) {
-                  if (CE->getNumOperands() > 0 &&
-                      CE->getOperand(0)->getType()->isAggregateType()) {
+              //Da li je konstanta tipa niza
+                if (ArrayType *ArrTy = dyn_cast<ArrayType>(ConstRet->getType())) {
+                  if(ArrTy->isSized()) {
                     return true;
                   }
                 }
+                // Pronasao da u LLVM-u konvertuje enum u int, nema zasebnu podrsku za enum
+                // if (isEnumType(F.getReturnType())) {
+                //   // kastujemo u ConstantInt
+                //   if (ConstantInt *EnumRet = dyn_cast<ConstantInt>(RetVal)) {
+                //     for (User *U : F.users()) {
+                //       // Uzimamo instrukciju i proveravamo da li je svaki put ista vrednost enum-a, u suprotnom bi samo proveravalo tip
+                //       if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(U)) {
+                //         if (EV->getNumIndices() == 1 && EV->getIndices()[0] == 0) {
+                //           const ConstantInt *Index =
+                //               dyn_cast<ConstantInt>(EV->getOperand(1));
+                //           if (Index && Index->getZExtValue() == 0) {
+                //             // Proveravamo da li se poklapa ta vrednost
+                //             if (const ConstantInt *Val =
+                //                     dyn_cast<ConstantInt>(EV->getOperand(0))) {
+                //               if (Val != EnumRet) {
+                //                 return false;
+                //               }
+                //             }
+                //           }
+                //         }
+                //       }
+                //     }
+                //   }
+                //   return true;
+                // }
+              
+              // Pointer tipovi
+              else if (F.getReturnType()->isPointerTy()) {
+                return true;
+                
               }
-              // Array tipovi
-              else if (F.getReturnType()->isArrayTy()) {
-                if (ConstantArray *ArrayRet = dyn_cast<ConstantArray>(RetVal)) {
-                  if (ArrayRet->getType() && ArrayRet->getType()->isArrayTy()) {
-                    if (ArrayRet->getType()->getArrayNumElements()) {
-                      Constant *Element = ArrayRet->getOperand(0);
-                      for (unsigned i = 1; i < ArrayRet->getNumOperands(); ++i) {
-                        if (ArrayRet->getOperand(i)) {
-                          if (ArrayRet->getOperand(i) != Element) {
-                            return false;
-                          }
-                        }
-                      }
+              // Tip strukture
+              else if (F.getReturnType()->isAggregateType()) {
                       return true;
-                    }
-                  }
-                }
               }
-              // Enum tipovi
-              else if (isEnumType(F.getReturnType())) {
-                // kastujemo u ConstantInt
-                if (ConstantInt *EnumRet = dyn_cast<ConstantInt>(RetVal)) {
-                  for (User *U : F.users()) {
-                    // Uzimamo instrukciju
-                    if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(U)) {
-                      if (EV->getNumIndices() == 1 && EV->getIndices()[0] == 0) {
-                        const ConstantInt *Index =
-                            dyn_cast<ConstantInt>(EV->getOperand(1));
-                        if (Index && Index->getZExtValue() == 0) {
-                          // Proveravamo da li se poklapa ta vrednost
-                          if (const ConstantInt *Val =
-                                  dyn_cast<ConstantInt>(EV->getOperand(0))) {
-                            if (Val != EnumRet) {
-                              return false;
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
+              // Enum tip, char, integer i float
+               // Provera za konstantne povratne vrednosti
+              // Zavisno od tipa povratne vrednosti funkcije
+              // Integer ili floating-point tipovi
+              else if (F.getReturnType()->isIntegerTy() ||
+                  F.getReturnType()->isFloatingPointTy()) {
+                if (!ConstRet->isNullValue()) {
                   return true;
                 }
               }
