@@ -1,3 +1,5 @@
 *output*
 *.ll
 *format*
+*.s
+*.ll
