@@ -32,7 +32,7 @@ public:
 
     std::vector<Function *> markedForDelete;
     for (Function &F : M) {
-      if (!F.isDeclaration() && !F.isIntrinsic() && isVirtual(F) ) {
+      if (!F.isDeclaration() && !F.isIntrinsic() && isVirtual(F)) {
         // Za svaku funkciju iz modula proveravamo da li zadovoljava uslov neke
         // od ovih funkcija. Ako da, brisemo je, jer ukoliko zadovoljava bilo
         // koju od ovih funkcija, eliminacija ne remeti rad modula
@@ -44,13 +44,10 @@ public:
         bool hasConstant = hasConstantReturnVirtualFunction(F);
         */
 
-        if (isEmptyVirtualFunction(F) ||
-            isUnreachableVirtualFunction(F,M) ||
+        if (isEmptyVirtualFunction(F) || isUnreachableVirtualFunction(F, M) ||
             // hasNoImplementedVirtualFunction(F) ||
-            hasConstantReturnVirtualFunction(F)
-            ){
-            
-        
+            hasConstantReturnVirtualFunction(F)) {
+
           deleteDeadCallsitesInMain(F, M);
           markedForDelete.push_back(&F);
 
@@ -87,11 +84,12 @@ private:
 
   // Brise funkcije koje su oznacene kao mrtve
   void deleteMarkedFunctions(std::vector<Function *> &markedFunctions) {
-    if(markedFunctions.empty())
+    if (markedFunctions.empty())
       return;
 
     for (auto func : markedFunctions) {
-      dbgs() << "Deleting " << func->getName() << "..." << "\n";
+      dbgs() << "Deleting " << func->getName() << "..."
+             << "\n";
       func->replaceAllUsesWith(UndefValue::get(func->getType()));
       func->eraseFromParent();
     }
@@ -162,28 +160,31 @@ private:
   // Trazimo pozvane funkcije u nasoj funkciji i pokusavamo da vidim
   // da li postoji grana poziva iz nje ka njima
   //=======================================================
-  bool isUnreachableVirtualFunction(const Function &F,Module& M) {
+  bool isUnreachableVirtualFunction(const Function &F, Module &M) {
     CallGraphNode *CGNode = (*CG)[&F];
 
-      BasicBlock &BB = *M.getFunction("main")->begin();
-      for (BasicBlock::iterator itINST = BB.begin(); itINST != BB.end(); itINST++) {
-        Instruction &INST = *itINST;
-        if (const CallInst *CInst = dyn_cast<CallInst>(&INST)) {
-          const Function *Callee = CInst->getCalledFunction();
-          
-          if(Callee->getName() == F.getName())
-            return false;
+    BasicBlock &BB = *M.getFunction("main")->begin();
+    for (BasicBlock::iterator itINST = BB.begin(); itINST != BB.end();
+         itINST++) {
+      Instruction &INST = *itINST;
+      if (const CallInst *CInst = dyn_cast<CallInst>(&INST)) {
+        const Function *Callee = CInst->getCalledFunction();
 
-          if (isCalledFromFunction(&F, Callee)) {
-            // Ako nemamo granu poziva iz trenutne funkcije F u pozvanu funkciju
-            // Callee, onda je virtuelna funkcija nedostizna
-            return false;
-          }
+        if (Callee->getName() == F.getName())
+          return false;
+
+        if (isCalledFromFunction(&F, Callee)) {
+          // Ako nemamo granu poziva iz trenutne funkcije F u pozvanu funkciju
+          // Callee, onda je virtuelna funkcija nedostizna
+          return false;
         }
       }
+    }
     // Ako su sve grane poziva iz trenutne funkcije prisutne u pozvanim
     // funkcijama, onda je virtuelna funkcija dostizna
-    dbgs() << F.getName() << " -> should be deleted " << "detected in *isUnreachableVirtualFunction* " << "\n";
+    dbgs() << F.getName() << " -> should be deleted "
+           << "detected in *isUnreachableVirtualFunction* "
+           << "\n";
     return true;
   }
 
@@ -203,7 +204,7 @@ private:
             // Proverimo da li se izvedeni tip gadja sa tipom klase
             if (DerivedType == ClassType) {
               // Funkcija je implementirana u izvedenoj klasi
-              
+
               return true;
             }
           }
@@ -319,7 +320,9 @@ private:
             // Da li je konstanta tipa niza
             if (ArrayType *ArrTy = dyn_cast<ArrayType>(ConstRet->getType())) {
               if (ArrTy->isSized()) {
-                dbgs() << F.getName() << " -> should be deleted " << "detected in *hasConstantReturnVirtualFunction* " << "\n";
+                dbgs() << F.getName() << " -> should be deleted "
+                       << "detected in *hasConstantReturnVirtualFunction* "
+                       << "\n";
                 return true;
               }
             }
@@ -354,13 +357,17 @@ private:
 
             // Pointer tipovi
             else if (F.getReturnType()->isPointerTy()) {
-              dbgs() << F.getName() << " -> should be deleted " << "detected in *hasConstantReturnVirtualFunction* " << "\n";
+              dbgs() << F.getName() << " -> should be deleted "
+                     << "detected in *hasConstantReturnVirtualFunction* "
+                     << "\n";
               return true;
 
             }
             // Tip strukture
             else if (F.getReturnType()->isAggregateType()) {
-              dbgs() << F.getName() << " -> should be deleted " << "detected in *hasConstantReturnVirtualFunction* " << "\n";
+              dbgs() << F.getName() << " -> should be deleted "
+                     << "detected in *hasConstantReturnVirtualFunction* "
+                     << "\n";
               return true;
             }
             // Enum tip, char, integer i float
@@ -368,9 +375,11 @@ private:
             // Zavisno od tipa povratne vrednosti funkcije
             // Integer ili floating-point tipovi
             else if (F.getReturnType()->isIntegerTy() ||
-                      F.getReturnType()->isFloatingPointTy()) {
+                     F.getReturnType()->isFloatingPointTy()) {
               if (!ConstRet->isNullValue()) {
-                dbgs() << F.getName() << " -> should be deleted " << "detected in *hasConstantReturnVirtualFunction* " << "\n";
+                dbgs() << F.getName() << " -> should be deleted "
+                       << "detected in *hasConstantReturnVirtualFunction* "
+                       << "\n";
                 return true;
               }
             }
@@ -378,36 +387,36 @@ private:
         }
       }
     }
-    
 
     return false; // Nije nadjena ReturnInst u funkciji
   }
 
-
   // 4. Provera da li je f-ja prazna
   //=======================================================
   bool isEmptyVirtualFunction(Function &F) {
-    
+
     int counter = 0;
     for (BasicBlock &bb : F) {
       // Iteriramo po instrukcijama i pitamo da li neka instrukcija ima
       // propratni efekat
       for (Instruction &i : bb) {
-          counter++;
-        }
+        counter++;
       }
+    }
 
     // Ovo se odnosi na void metode funkcije
     // Svaka klasna metoda ima bar cetiri instrukcije
     // 3 instrukcije koje se odnose na klasni pokazivac this
     // 1 return instrukcija
-    // Ako ima <= 4 instrukcije to znaci da je ona prazna  
-    if(counter <= 4 && F.getReturnType()->isVoidTy()){
-      dbgs() << F.getName() << " -> should be deleted " << "detected in *isEmptyVirtualFunction* " << "\n";
+    // Ako ima <= 4 instrukcije to znaci da je ona prazna
+    if (counter <= 4 && F.getReturnType()->isVoidTy()) {
+      dbgs() << F.getName() << " -> should be deleted "
+             << "detected in *isEmptyVirtualFunction* "
+             << "\n";
 
       return true;
     }
-  
+
     // Ako gornji uslov nije ispunjen onda funkcija nije prazna
     return false;
   }
