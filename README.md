@@ -10,3 +10,7 @@
         a) If you want recompile your pass you can do so via script
         b) Script will auto run test on the testExample given in the argument of the script
         c) Generated Ir output of the pass will end up in TestFiles folder with the name "PassIrOutput.s"
+
+## Guide to writing tests
+    -> Our pass detects virtual function by name it looks for either  _virtual sufix or virtual_ prefix in the name
+    -> Once you write the test pass you should call it with testScript (guide above)
