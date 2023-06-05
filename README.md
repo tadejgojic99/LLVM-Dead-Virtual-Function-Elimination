@@ -12,5 +12,5 @@
         c) Generated Ir output of the pass will end up in TestFiles folder with the name "PassIrOutput.s"
 
 ## Guide to writing tests
-    -> Our pass detects virtual function by name it looks for either  _virtual sufix or virtual_ prefix in the name
+    -> Our pass detects virtual function by name. It looks for either  _virtual sufix or virtual_ prefix in the name
     -> Once you write the test pass you should call it with testScript (guide above)
