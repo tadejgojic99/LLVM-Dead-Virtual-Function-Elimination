@@ -1,4 +1,5 @@
 #include "llvm/Analysis/CallGraph.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
@@ -36,25 +37,47 @@ public:
         // Za svaku funkciju iz modula proveravamo da li zadovoljava uslov neke
         // od ovih funkcija. Ako da, brisemo je, jer ukoliko zadovoljava bilo
         // koju od ovih funkcija, eliminacija ne remeti rad modula
-        /*
-        bool isAdequate = isAdequateFunction(F);
-        bool isEmpty = isEmptyVirtualFunction(F);
-        bool isUnreachable = isUnreachableVirtualFunction(F);
-        bool hasNoImplemented = hasNoImplementedVirtualFunction(F);
+        
         bool hasConstant = hasConstantReturnVirtualFunction(F);
-        */
 
-        if (isEmptyVirtualFunction(F) || isUnreachableVirtualFunction(F, M) ||
-            // hasNoImplementedVirtualFunction(F) ||
-            hasConstantReturnVirtualFunction(F)) {
+        if (isEmptyVirtualFunction(F) || isUnreachableVirtualFunction(F, M) || hasConstant) {
 
+          // U slucaju da ima konstantnu povratnu vrednost, necemo je samo obrisati, vec cemo sve pozive te funkcije zameniti povratnom vrednoscu(jer znamo da je konstanta)
+          if(hasConstant) {
+            Constant* constRet = nullptr;
+            for (auto& BB : F) {
+              // Trazimo ret instrukciju i kastujemo u konstantu
+              if (auto* retInst = dyn_cast<ReturnInst>(&BB.back())) {
+                  constRet = dyn_cast<Constant>(retInst->getReturnValue());
+                  break;
+              }
+            }   
+            if (constRet) {
+              //Kastujemo je u tip povratne vrednosti funkcije F
+              auto* constValue = ConstantExpr::getCast(Instruction::BitCast, constRet, F.getReturnType());
+              // Iteriramo kroz sve upotrebe funkcije
+              for (auto& U : F.uses()) {
+                // Kada naidjemo na instrukciju poziva bas funkcije F, onda menjamo poziv funkcije njenom povratnom vrednoscu i eliminisemo funkciju iz roditeljskog BB-a, cime efektivno brisemo 
+                if (auto* CI = dyn_cast<CallInst>(U.getUser())) {
+                  if (CI->getCalledFunction() == &F) {
+                    CI->replaceAllUsesWith(constValue);
+                    CI->eraseFromParent();
+                  }
+                }
+              }
+            }
+          }
+  
           deleteDeadCallsitesInMain(F, M);
           markedForDelete.push_back(&F);
+      
+          
 
           Changed = true;
         }
       }
     }
+    
     deleteMarkedFunctions(markedForDelete);
 
     return Changed;
@@ -86,7 +109,7 @@ private:
   void deleteMarkedFunctions(std::vector<Function *> &markedFunctions) {
     if (markedFunctions.empty())
       return;
-
+    //std::reverse(markedFunctions.begin(), markedFunctions.end());
     for (auto func : markedFunctions) {
       dbgs() << "Deleting " << func->getName() << "..."
              << "\n";
@@ -314,7 +337,9 @@ private:
     //  nasli return
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
+        // Uzimamo povratnu instrukciju
         if (ReturnInst *RetInst = dyn_cast<ReturnInst>(&I)) {
+          // Gledamo povratnu vrednost vrednost 
           Value *RetVal = RetInst->getOperand(0);
           if (Constant *ConstRet = dyn_cast<Constant>(RetVal)) {
             // Da li je konstanta tipa niza
@@ -396,10 +421,10 @@ private:
   bool isEmptyVirtualFunction(Function &F) {
 
     int counter = 0;
-    for (BasicBlock &bb : F) {
+    for (BasicBlock &BB : F) {
       // Iteriramo po instrukcijama i pitamo da li neka instrukcija ima
       // propratni efekat
-      for (Instruction &i : bb) {
+      for (Instruction &I : BB) {
         counter++;
       }
     }
